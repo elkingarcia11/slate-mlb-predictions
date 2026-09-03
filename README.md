@@ -1,8 +1,8 @@
-# MLB Game Day — Prediction Stats Dashboard
+# Slate — MLB Predictions
 
 A small Flask app that reads your prediction CSVs straight out of GCS
 (`predictions/<date>/<stat>.csv`) and shows each stat sheet as a sortable
-table plus a bar chart, with the bucket path configurable from the UI.
+table plus a previous-day pred vs actual scorecard.
 
 ## 1. Install dependencies
 

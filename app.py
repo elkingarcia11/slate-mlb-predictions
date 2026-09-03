@@ -1,6 +1,6 @@
 """
-MLB Predictions Dashboard
---------------------------
+Slate — MLB Predictions
+-----------------------
 Flask backend that lists date folders and CSV stat files from a GCS bucket
 and serves them as JSON for the frontend to render as tables/charts.
 
