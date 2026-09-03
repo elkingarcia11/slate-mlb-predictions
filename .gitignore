@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.env
+*.egg-info/
+dist/
+build/
+
+# Secrets / credentials
+gcs-sa.json
+*.json.key
+
+# IDE
+.cursorrules
+.DS_Store

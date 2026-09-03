@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+*.egg-info/
+
+# Secrets (use ADC / Secret Manager on Cloud Run)
+gcs-sa.json
+
+# Dev/tooling
+.cursorrules
+.gitignore
+.dockerignore
+README.md
+.DS_Store

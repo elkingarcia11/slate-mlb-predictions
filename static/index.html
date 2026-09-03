@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MLB Game Day — Prediction Stats</title>
+<link rel="icon" type="image/webp" href="/mlb-logo.webp">
+<link rel="apple-touch-icon" href="/mlb-logo.webp">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <img class="brand-icon" src="/mlb-logo.webp" alt="">
+    </span>
+    <div class="brand-text">
+      <span class="brand-title">MLB GAME DAY</span>
+      <span class="brand-sub">Prediction Stats</span>
+    </div>
+  </div>
+
+</header>
+
+<nav class="date-strip" id="dateStrip">
+  <div class="date-strip-label">DATE</div>
+  <div class="date-tiles" id="dateTiles">
+    <div class="empty-note">Loading dates…</div>
+  </div>
+</nav>
+
+<main class="layout">
+  <aside class="stat-rail" id="statRail">
+    <div class="empty-note">Pick a date to see stat sheets.</div>
+  </aside>
+
+  <section class="board">
+    <div class="board-header">
+      <div>
+        <h1 id="statTitle">Select a stat sheet</h1>
+        <p id="statMeta" class="board-meta">&nbsp;</p>
+      </div>
+      <div class="board-controls" id="boardControls" hidden></div>
+    </div>
+
+    <div id="statusArea" class="status-area"></div>
+
+    <!-- ── Scorecard panel ── -->
+    <div class="scorecard" id="scorecard" hidden>
+      <div class="scorecard-header">
+        <span class="scorecard-label" id="scorecardLabel">PREDICTIONS</span>
+        <div class="sc-kpis" id="scKpis"></div>
+      </div>
+      <div class="sc-strip-wrap" id="scStripWrap">
+        <div class="sc-strip" id="scStrip"></div>
+      </div>
+    </div>
+
+    <div class="table-card" id="tableCard" hidden>
+      <div class="table-scroll">
+        <table id="dataTable">
+          <thead><tr></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
