@@ -4,8 +4,6 @@ const state = {
   stats: [],
   selectedStat: null,
   currentData: null, // {columns, numericColumns, rows, label}
-  sortCol: null,
-  sortDir: "desc",
   tableSortCol: null,
   tableSortDir: "desc",
 };
@@ -50,25 +48,21 @@ function renderDateTiles() {
 async function selectDate(date) {
   state.selectedDate = date;
   renderDateTiles();
-  $("statRail").innerHTML =
-    `<div class="empty-note">Loading stat sheets…</div>`;
-  clearBoard();
+  if (state.selectedStat) await loadPredictionTable(state.selectedStat);
+}
+
+async function loadCategories() {
   try {
-    const res = await fetch(`/api/dates/${encodeURIComponent(date)}/stats`);
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    state.stats = data.stats || [];
+    const data = await fetchJson("/api/stats/predictions");
+    state.stats = (data.categories || []).map((entry) => ({
+      file: entry.category,
+      label: friendlyLabel(entry.category),
+    }));
     renderStatRail();
-    if (state.stats.length) {
-      const keep = state.stats.find((s) => s.file === state.selectedStat);
-      selectStat(keep ? keep.file : state.stats[0].file);
-    } else {
-      $("statRail").innerHTML =
-        `<div class="empty-note">No CSV files in this date folder.</div>`;
-    }
+    if (state.stats.length) await selectStat(state.stats[0].file);
+    else setStatus("No prediction stats are available yet.");
   } catch (err) {
-    $("statRail").innerHTML =
-      `<div class="empty-note">Couldn't load stat sheets: ${escapeHtml(err.message)}</div>`;
+    setStatus(err.message, true);
   }
 }
 
@@ -88,39 +82,43 @@ function renderStatRail() {
 // ---------------------------------------------------------------
 // Stat data
 // ---------------------------------------------------------------
+async function fetchJson(url) {
+  const res = await fetch(url, { cache: "no-store" });
+  const data = await res.json();
+  if (!res.ok || data.error) throw new Error(data.error || "Unable to load data.");
+  return data;
+}
+
 async function selectStat(file) {
   state.selectedStat = file;
   renderStatRail();
-  setStatus("Loading…");
-  clearBoard();
-  try {
-    const res = await fetch(
-      `/api/data/${encodeURIComponent(state.selectedDate)}/${encodeURIComponent(file)}`,
-    );
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    state.currentData = data;
-    const predCol =
-      data.columns.find((c) => c === "prediction_proba") ||
-      data.columns.find((c) => /prediction/i.test(c));
-    state.tableSortCol =
-      predCol || data.numericColumns[0] || data.columns[0] || null;
-    state.tableSortDir = "desc";
-    _scSort = "pred";
-    _scDataCache = {};
-    setStatus("");
-    $("statTitle").textContent = data.label;
-    $("statMeta").textContent = "";
-    renderScorecard();
-    renderControls();
-    renderTable();
-  } catch (err) {
-    setStatus(`Couldn't load this stat sheet: ${err.message}`, true);
-  }
+  $("statTitle").textContent = friendlyLabel(file);
+  $("statMeta").textContent = "";
+  $("scorecard").hidden = true;
+  setStatus("Loading stats…");
+  await Promise.all([loadPublishedStats(file), loadPredictionTable(file)]);
 }
 
-function renderControls() {
-  $("boardControls").hidden = true;
+let tableRequest = 0;
+async function loadPredictionTable(file) {
+  const request = ++tableRequest;
+  const date = state.selectedDate;
+  state.currentData = null;
+  $("tableCard").hidden = true;
+  $("predictionStatus").textContent = date ? "Loading predictions…" : "Select a date to view predictions.";
+  if (!date) return;
+  try {
+    const data = await fetchJson(`/api/data/${encodeURIComponent(date)}/${encodeURIComponent(file)}`);
+    if (request !== tableRequest) return;
+    state.currentData = data;
+    state.tableSortCol = data.columns.find((c) => c === "prediction_proba") ||
+      data.columns.find((c) => /prediction/i.test(c)) || data.columns[0];
+    state.tableSortDir = "desc";
+    $("predictionStatus").textContent = `Predictions · ${date}`;
+    renderTable();
+  } catch (err) {
+    if (request === tableRequest) $("predictionStatus").textContent = `Predictions unavailable for ${date}: ${err.message}`;
+  }
 }
 
 // ---------------------------------------------------------------
@@ -216,186 +214,88 @@ function renderTableBody() {
   tbody.appendChild(frag);
 }
 
-// ---------------------------------------------------------------
-// Scorecard — horizontal prediction strip
-// ---------------------------------------------------------------
+// Published summary metrics: formatting only, no local evaluation.
+const PERIODS = {
+  yesterday: "Yesterday", all_time: "All time", last_7_days: "Last 7 days",
+  last_30_days: "Last 30 days", by_weekday: "By weekday",
+  by_home_away: "Home / away", daily: "Daily",
+};
+let statsRequest = 0;
+let publishedStats = null;
+let selectedPeriod = "yesterday";
 
-function _fmt(v, decimals = 1) {
-  if (v === undefined || v === null || isNaN(v)) return "—";
-  return Number.isInteger(v) ? String(v) : v.toFixed(decimals);
+function friendlyLabel(value) {
+  return value.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function _isOverHit(pred, actual) {
-  return +actual >= +pred;
+function formatMetric(key, value) {
+  if (value === null || value === undefined) return "—";
+  if (typeof value !== "number") return String(value);
+  if (key.endsWith("_rate")) return `${(value * 100).toFixed(1)}%`;
+  if (Number.isInteger(value)) return value.toLocaleString();
+  return value.toFixed(3);
 }
 
-function _dayBefore(iso) {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() - 1);
-  const yy = dt.getFullYear();
-  const mm = String(dt.getMonth() + 1).padStart(2, "0");
-  const dd = String(dt.getDate()).padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
+async function loadPublishedStats(file) {
+  const request = ++statsRequest;
+  publishedStats = null;
+  try {
+    const data = await fetchJson(`/api/stats/predictions/${encodeURIComponent(file)}`);
+    if (request !== statsRequest) return;
+    publishedStats = data;
+    $("statMeta").textContent = `As of ${data.as_of || "—"} · Evaluated through ${data.evaluated_through || "—"}`;
+    setStatus("");
+    renderPublishedStats();
+  } catch (err) {
+    if (request === statsRequest) setStatus(err.message, true);
+  }
 }
 
-// Sort mode: "pred" | "actual" | "diff"
-let _scSort = "pred";
-let _scDataCache = {}; // date+file -> data
-
-async function renderScorecard() {
-  const el = $("scorecard");
-
-  const targetDate = state.selectedDate ? _dayBefore(state.selectedDate) : null;
-  const file = state.selectedStat;
-  if (!targetDate || !file) {
-    el.hidden = true;
-    return;
+function renderPublishedStats() {
+  if (!publishedStats) return;
+  $("scorecard").hidden = false;
+  const tabs = $("statsPeriods");
+  tabs.replaceChildren();
+  Object.entries(PERIODS).forEach(([key, label]) => {
+    const button = document.createElement("button");
+    button.className = "date-tile" + (selectedPeriod === key ? " active" : "");
+    button.textContent = label;
+    button.setAttribute("aria-pressed", String(selectedPeriod === key));
+    button.onclick = () => { selectedPeriod = key; renderPublishedStats(); };
+    tabs.appendChild(button);
+  });
+  const value = publishedStats[selectedPeriod];
+  let rows;
+  if (selectedPeriod === "daily") rows = [...(value || [])].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  else if (["by_weekday", "by_home_away"].includes(selectedPeriod)) {
+    rows = Object.entries(value || {}).map(([group, metrics]) => ({ group: friendlyLabel(group), ...metrics }));
+  } else rows = value ? [value] : [];
+  const content = $("statsContent");
+  content.replaceChildren();
+  if (!rows.length) content.textContent = "No settled results for this period yet.";
+  else {
+    const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+    const table = document.createElement("table");
+    const head = table.createTHead().insertRow();
+    columns.forEach((key) => {
+      const th = document.createElement("th");
+      th.textContent = friendlyLabel(key);
+      th.title = publishedStats.definitions?.[key] || "";
+      head.appendChild(th);
+    });
+    const body = table.createTBody();
+    rows.forEach((row) => {
+      const tr = body.insertRow();
+      columns.forEach((key) => { tr.insertCell().textContent = formatMetric(key, row[key]); });
+    });
+    content.appendChild(table);
   }
-
-  const cacheKey = `${targetDate}|${file}`;
-  let data = _scDataCache[cacheKey];
-  if (!data) {
-    try {
-      const res = await fetch(
-        `/api/scorecard/${encodeURIComponent(targetDate)}/${encodeURIComponent(file)}`,
-      );
-      data = await res.json();
-      if (data.error || !data.rows?.length) {
-        el.hidden = true;
-        return;
-      }
-      _scDataCache[cacheKey] = data;
-    } catch {
-      el.hidden = true;
-      return;
-    }
-  }
-
-  const { rows, nameCol, predCol, actualCol } = data;
-  if (!rows.length) {
-    el.hidden = true;
-    return;
-  }
-
-  el.hidden = false;
-  const labelCol = nameCol || "player_name";
-
-  $("scorecardLabel").textContent =
-    `${data.label.toUpperCase()} · ${targetDate}`;
-
-  let sorted = [...rows].filter(
-    (r) =>
-      r[predCol] !== null && r[predCol] !== undefined && !isNaN(+r[predCol]),
-  );
-
-  if (_scSort === "actual" && actualCol) {
-    sorted = sorted.filter(
-      (r) =>
-        r[actualCol] !== null &&
-        r[actualCol] !== undefined &&
-        !isNaN(+r[actualCol]),
-    );
-    sorted.sort(
-      (a, b) => (+b[actualCol] ?? -Infinity) - (+a[actualCol] ?? -Infinity),
-    );
-  } else if (_scSort === "diff" && actualCol) {
-    sorted = sorted.filter(
-      (r) =>
-        r[actualCol] !== null &&
-        r[actualCol] !== undefined &&
-        !isNaN(+r[actualCol]),
-    );
-    sorted.sort(
-      (a, b) =>
-        Math.abs(+b[actualCol] - +b[predCol]) -
-        Math.abs(+a[actualCol] - +a[predCol]),
-    );
-  } else {
-    sorted.sort(
-      (a, b) => (+b[predCol] ?? -Infinity) - (+a[predCol] ?? -Infinity),
-    );
-  }
-
-  const kpisEl = $("scKpis");
-  kpisEl.innerHTML = "";
-  if (actualCol) {
-    const valid = sorted.filter(
-      (r) =>
-        r[actualCol] !== null &&
-        r[actualCol] !== undefined &&
-        !isNaN(r[actualCol]),
-    );
-    if (valid.length) {
-      const hits = valid.filter((r) => _isOverHit(r[predCol], r[actualCol]));
-      const hitRate = ((hits.length / valid.length) * 100).toFixed(0);
-      const cls = hitRate >= 60 ? "good" : hitRate >= 40 ? "warn" : "bad";
-      const avgDiff =
-        valid.reduce((s, r) => s + (+r[actualCol] - +r[predCol]), 0) /
-        valid.length;
-      const signed = `${avgDiff > 0 ? "+" : ""}${avgDiff.toFixed(2)}`;
-      const diffCls = avgDiff >= 0 ? "good" : "bad";
-      kpisEl.innerHTML = `
-        <span class="sc-kpi" style="color:var(--ink-text);background:transparent;border:none;padding-left:0">PREV DAY</span>
-        <span class="sc-kpi ${cls}"><span>HIT RATE</span>${hitRate}%</span>
-        <span class="sc-kpi ${diffCls}"><span>AVG DIFF</span>${signed}</span>
-      `;
-    }
-  } else {
-    kpisEl.innerHTML = `
-      <span class="sc-kpi" style="color:var(--ink-text);background:transparent;border:none;padding-left:0">PREV DAY</span>
-    `;
-  }
-
-  const strip = $("scStrip");
-  strip.innerHTML = "";
-
-  if (!sorted.length) {
-    strip.innerHTML = `<span class="sc-empty">No results yet for this date.</span>`;
-    return;
-  }
-
-  sorted.forEach((row) => {
-    const name = String(row[labelCol] ?? "—");
-    const pred = row[predCol];
-    const actual = actualCol ? row[actualCol] : null;
-    const hasActual = actual !== null && actual !== undefined && !isNaN(actual);
-
-    const diff = hasActual ? actual - pred : null;
-    const isHit = hasActual && _isOverHit(pred, actual);
-
-    const cardClass = hasActual ? (isHit ? "hit" : "miss") : "pred-only";
-
-    let diffHTML = "";
-    if (diff !== null) {
-      const sign = diff > 0 ? "+" : "";
-      const cls = isHit ? "pos" : diff > 0 ? "pos" : "neg";
-      diffHTML = `<div class="sc-foot"><span class="sc-diff ${cls}"><span>DIFF</span>${sign}${_fmt(diff, 2)}</span></div>`;
-    }
-
-    const card = document.createElement("div");
-    card.className = `sc-card ${cardClass}`;
-    card.innerHTML = `
-      <div class="sc-card-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
-      <div class="sc-cols">
-        <div class="sc-col">
-          <span class="sc-col-lbl">PRED</span>
-          <span class="sc-col-val">${_fmt(pred, 2)}</span>
-        </div>
-        ${
-          hasActual
-            ? `
-        <div class="sc-col-divider"></div>
-        <div class="sc-col">
-          <span class="sc-col-lbl">ACT</span>
-          <span class="sc-col-val ${isHit ? "pa-hit" : "pa-miss"}">${_fmt(actual, 2)}</span>
-        </div>`
-            : ""
-        }
-      </div>
-      ${diffHTML}
-    `;
-    strip.appendChild(card);
+  const definitions = $("statsDefinitions");
+  definitions.replaceChildren();
+  Object.entries(publishedStats.definitions || {}).forEach(([key, value]) => {
+    const p = document.createElement("p");
+    p.textContent = `${friendlyLabel(key)}: ${value}`;
+    definitions.appendChild(p);
   });
 }
 
@@ -411,21 +311,6 @@ function setStatus(msg, isError = false) {
   area.innerHTML = `<div class="status-msg${isError ? " error" : ""}">${escapeHtml(msg)}</div>`;
 }
 
-function clearBoard() {
-  $("boardControls").hidden = true;
-  $("tableCard").hidden = true;
-  $("scorecard").hidden = true;
-}
-
-function resetSelection() {
-  state.selectedDate = null;
-  state.selectedStat = null;
-  state.currentData = null;
-  $("statTitle").textContent = "Select a stat sheet";
-  $("statMeta").textContent = "";
-  clearBoard();
-}
-
 function escapeHtml(s) {
   const div = document.createElement("div");
   div.textContent = s;
@@ -436,5 +321,5 @@ function escapeHtml(s) {
 // Boot
 // ---------------------------------------------------------------
 (async function init() {
-  await loadDates();
+  await Promise.all([loadDates(), loadCategories()]);
 })();

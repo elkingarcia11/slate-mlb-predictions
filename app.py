@@ -1,17 +1,20 @@
 """
 Slate — MLB Predictions
 -----------------------
-Flask backend that lists date folders and CSV stat files from a GCS bucket
-and serves them as JSON for the frontend to render as tables/charts.
+Flask backend serving published prediction stats JSON and daily prediction
+CSVs from GCS. Performance metrics are calculated by the upstream workflow.
 
 Credentials: uses gcs-sa.json locally; on Cloud Run, uses ADC automatically.
 """
 
 import csv
+import gzip
 import io
+import json
 import os
 
 from flask import Flask, jsonify, send_from_directory
+from google.api_core.exceptions import NotFound
 from google.cloud import storage
 from google.oauth2 import service_account
 
@@ -22,62 +25,13 @@ app = Flask(__name__, static_folder="static", static_url_path="")
 # ----------------------------------------------------------------------
 BUCKET_NAME = "mlb-analysis-toolkit"
 PREDICTIONS_PREFIX = "predictions/"
-PANELS_PREFIX = "panels/"
+STATS_PREFIX = "stats/predictions/"
 _LOCAL_SA_FILE = "gcs-sa.json"
-
-# target CSV stem -> panel file, label column, join keys
-TARGET_META: dict[str, dict] = {
-    "team_win": {
-        "panel": "team_game.csv",
-        "label": "label_win",
-        "keys": ("gamePk", "team_id"),
-        "task": "classification",
-        "pred_col": "prediction_proba",
-        "name": "team_abbr",
-    },
-    "team_total_runs": {
-        "panel": "team_game.csv",
-        "label": "label_total_runs",
-        "keys": ("gamePk", "team_id"),
-        "task": "regression",
-        "name": "team_abbr",
-    },
-    "team_run_diff": {
-        "panel": "team_game.csv",
-        "label": "label_run_diff",
-        "keys": ("gamePk", "team_id"),
-        "task": "regression",
-        "name": "team_abbr",
-    },
-    "player_hits": {
-        "panel": "player_game.csv",
-        "label": "label_hits",
-        "keys": ("gamePk", "player_id"),
-        "task": "regression",
-        "name": "player_name",
-    },
-    "player_home_runs": {
-        "panel": "player_game.csv",
-        "label": "label_home_runs",
-        "keys": ("gamePk", "player_id"),
-        "task": "regression",
-        "name": "player_name",
-    },
-    "player_strikeouts": {
-        "panel": "player_game.csv",
-        "label": "label_strikeouts",
-        "keys": ("gamePk", "player_id"),
-        "task": "regression",
-        "name": "player_name",
-    },
-    "pitcher_strikeouts": {
-        "panel": "player_game.csv",
-        "label": "label_pitcher_strikeouts",
-        "keys": ("gamePk", "player_id"),
-        "task": "regression",
-        "name": "player_name",
-    },
-}
+_GZIP_MAGIC = b"\x1f\x8b"
+CATEGORIES = frozenset({
+    "pitcher_strikeouts", "player_hits", "player_home_runs",
+    "player_strikeouts", "team_win", "team_total_runs", "team_run_diff",
+})
 
 _gcs_client: storage.Client | None = None
 
@@ -104,50 +58,25 @@ def _friendly_label(filename: str) -> str:
     return name.replace("_", " ").title()
 
 
-def _stat_stem(stat_file: str) -> str:
-    name = stat_file.rsplit("/", 1)[-1]
-    return name.rsplit(".", 1)[0] if name.lower().endswith(".csv") else name
+def _maybe_gunzip(blob, data: bytes) -> bytes:
+    """Gunzip payload when GCS stores CSV/JSON as gzip (same object name)."""
+    if not data:
+        return data
+    encoding = str(getattr(blob, "content_encoding", "") or "").lower()
+    if encoding == "gzip" or data.startswith(_GZIP_MAGIC):
+        try:
+            return gzip.decompress(data)
+        except gzip.BadGzipFile:
+            pass
+    return data
 
 
-def _load_csv_blob(bucket, blob_path: str) -> tuple[list[str], list[dict]] | None:
-    blob = bucket.blob(blob_path)
-    if not blob.exists():
-        return None
-    raw = blob.download_as_bytes().decode("utf-8-sig")
-    reader = csv.DictReader(io.StringIO(raw))
-    return list(reader.fieldnames or []), list(reader)
-
-
-def _join_predictions_actuals(
-    pred_rows: list[dict],
-    panel_rows: list[dict],
-    *,
-    keys: tuple[str, ...],
-    label_col: str,
-    name_col: str,
-) -> list[dict]:
-    panel_index: dict[tuple[str, ...], dict] = {}
-    for row in panel_rows:
-        key = tuple(str(row.get(k) or "").strip() for k in keys)
-        if any(not part for part in key):
-            continue
-        panel_index[key] = row
-
-    merged: list[dict] = []
-    for prow in pred_rows:
-        key = tuple(str(prow.get(k) or "").strip() for k in keys)
-        panel_row = panel_index.get(key)
-        if not panel_row:
-            continue
-        actual_raw = str(panel_row.get(label_col) or "").strip()
-        if not actual_raw or actual_raw.lower() == "nan":
-            continue
-        out = dict(prow)
-        out["actual"] = actual_raw
-        if name_col in panel_row and panel_row[name_col]:
-            out[name_col] = panel_row[name_col]
-        merged.append(out)
-    return merged
+def _download_blob_text(blob) -> str:
+    """Raw-download a blob and decode UTF-8, gunzipping when needed."""
+    # raw_download avoids relying on the client to honor Content-Encoding;
+    # toolkit uploads keep .csv names but store gzip bytes.
+    data = blob.download_as_bytes(raw_download=True)
+    return _maybe_gunzip(blob, data).decode("utf-8-sig")
 
 
 # ----------------------------------------------------------------------
@@ -209,7 +138,7 @@ def get_stat_data(date, stat_file):
         if not blob.exists():
             return jsonify({"error": f"Not found: {blob_path}"}), 404
 
-        raw = blob.download_as_bytes().decode("utf-8-sig")
+        raw = _download_blob_text(blob)
         reader = csv.DictReader(io.StringIO(raw))
         fieldnames = reader.fieldnames or []
         rows = list(reader)
@@ -244,61 +173,34 @@ def get_stat_data(date, stat_file):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/scorecard/<date>/<stat_file>", methods=["GET"])
-def get_scorecard(date, stat_file):
-    """Join predictions with panel labels for pred vs actual scorecard."""
-    if not stat_file.lower().endswith(".csv"):
-        stat_file = f"{stat_file}.csv"
-    stem = _stat_stem(stat_file)
-    meta = TARGET_META.get(stem)
-    if not meta:
-        return jsonify({"error": f"Unknown target: {stem}"}), 400
+def _serve_prediction_stats(filename):
+    """Serve published stats unchanged; never join panels or calculate metrics."""
     try:
-        bucket = get_bucket()
-        pred_path = f"{PREDICTIONS_PREFIX}{date}/{stat_file}"
-        panel_path = f"{PANELS_PREFIX}{date}/{meta['panel']}"
+        blob = get_bucket().blob(f"{STATS_PREFIX}{filename}.json")
+        data = json.loads(_download_blob_text(blob))
+        response = jsonify(data)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except NotFound:
+        return jsonify({"error": "Prediction stats are not available yet. They appear after a successful stats-only workflow run."}), 404
+    except (ValueError, UnicodeError, EOFError):
+        app.logger.exception("Invalid published prediction stats")
+        return jsonify({"error": "Published prediction stats could not be read."}), 502
+    except Exception:
+        app.logger.exception("Unable to fetch prediction stats")
+        return jsonify({"error": "Unable to load prediction stats from storage."}), 502
 
-        pred_loaded = _load_csv_blob(bucket, pred_path)
-        if pred_loaded is None:
-            return jsonify({"error": f"Not found: {pred_path}"}), 404
-        _, pred_rows = pred_loaded
 
-        panel_loaded = _load_csv_blob(bucket, panel_path)
-        if panel_loaded is None:
-            return jsonify({"error": f"Not found: {panel_path}"}), 404
-        _, panel_rows = panel_loaded
+@app.route("/api/stats/predictions", methods=["GET"])
+def prediction_stats_index():
+    return _serve_prediction_stats("index")
 
-        rows = _join_predictions_actuals(
-            pred_rows,
-            panel_rows,
-            keys=meta["keys"],
-            label_col=meta["label"],
-            name_col=meta["name"],
-        )
 
-        for r in rows:
-            for col in ("prediction", "actual", "prediction_proba"):
-                v = r.get(col)
-                if v in (None, ""):
-                    continue
-                try:
-                    r[col] = float(v) if "." in str(v) else int(v)
-                except ValueError:
-                    pass
-
-        return jsonify({
-            "date": date,
-            "stat": stat_file,
-            "label": _friendly_label(stat_file),
-            "task": meta["task"],
-            "predCol": meta.get("pred_col", "prediction"),
-            "actualCol": "actual",
-            "nameCol": meta["name"],
-            "rows": rows,
-            "rowCount": len(rows),
-        })
-    except Exception as e:  # noqa: BLE001
-        return jsonify({"error": str(e)}), 500
+@app.route("/api/stats/predictions/<category>", methods=["GET"])
+def prediction_stats_category(category):
+    if category not in CATEGORIES:
+        return jsonify({"error": "Unknown prediction category."}), 400
+    return _serve_prediction_stats(category)
 
 
 def _is_number(v: str) -> bool:

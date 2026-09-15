@@ -1,75 +1,58 @@
 # Slate — MLB Predictions
 
-A small Flask app that reads your prediction CSVs straight out of GCS
-(`predictions/<date>/<stat>.csv`) and shows each stat sheet as a sortable
-table plus a previous-day pred vs actual scorecard.
+Flask serves prediction tables and precomputed performance stats from the
+`mlb-analysis-toolkit` GCS bucket. The UI does not calculate performance metrics
+or join predictions with panels.
 
-## 1. Install dependencies
+## Run locally
 
 ```bash
-cd mlb-stats-app
-python3 -m venv venv && source venv/bin/activate   # optional but recommended
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-```
-
-## 2. Add your service account key
-
-Drop your key file in the project root as `gcs-sa.json` (same folder as
-`app.py`). The service account needs at least `roles/storage.objectViewer`
-on the bucket.
-
-```
-mlb-stats-app/
-├── app.py
-├── gcs-sa.json     <-- add this (not committed, see .gitignore below)
-└── static/...
-```
-
-If you'd rather keep the key elsewhere, set `GCS_CREDENTIALS_PATH` (see
-below) or change it later from the gear/config panel in the UI.
-
-## 3. Configure the bucket path (optional)
-
-Defaults already match your layout (`mlb-analysis-toolkit` /
-`predictions/`). To point elsewhere, copy `.env.example` to `.env` and
-edit, or export the vars directly:
-
-```bash
-export GCS_BUCKET_NAME=mlb-analysis-toolkit
-export GCS_PREDICTIONS_PREFIX=predictions/
-export GCS_CREDENTIALS_PATH=gcs-sa.json
-```
-
-You can also change the bucket/prefix/credentials path at runtime from the
-"gs://…" button in the top-right of the app — no restart needed.
-
-## 4. Run it
-
-```bash
 python app.py
 ```
 
-Then open **http://localhost:5050**.
+Open **http://localhost:5050**. The default port can be changed with `PORT`.
 
-## How it works
+Place a service account key at `gcs-sa.json` in the project root for local use.
+Otherwise, the backend uses Application Default Credentials (including the
+attached service account on Cloud Run). The account needs
+`roles/storage.objectViewer` on the bucket. Credentials stay on the backend;
+do not commit the key file.
 
-- `GET /api/dates` — lists the `YYYY-MM-DD/` folders under the prefix.
-- `GET /api/dates/<date>/stats` — lists the `.csv` files in that folder
-  (works for any file names, so `pitcher_strikeouts.csv`,
-  `team_win.csv`, etc. all show up automatically).
-- `GET /api/data/<date>/<file>` — downloads and parses one CSV, detects
-  which columns are numeric, and returns JSON for the frontend.
+## Data sources
 
-The frontend lets you:
-- Pick a date from the scoreboard-style date strip (newest first).
-- Pick a stat sheet from the left rail.
-- Sort the table by clicking any column header.
-- Pick which numeric column drives the bar chart (top 15, high→low or
-  low→high).
+- `stats/predictions/index.json` supplies the category navigation.
+- `stats/predictions/{category}.json` supplies `yesterday`, `all_time`,
+  `last_7_days`, `last_30_days`, `by_weekday`, `by_home_away`, and `daily`.
+- `predictions/<date>/<category>.csv` supplies the sortable prediction table.
 
-## Notes
+Stats appear after a successful GCS stats-only workflow run. Missing stats show
+an unavailable message; there is no local calculation fallback. Summaries load
+independently of prediction CSV availability and use the published `as_of` and
+`evaluated_through` dates, regardless of the selected prediction-table date.
+Rates are displayed as percentages; null metrics display as an em dash.
+Published metric definitions are available below the summary table.
 
-- Add `gcs-sa.json` and `.env` to `.gitignore` before pushing this
-  anywhere — don't commit credentials.
-- The CSV parsing is schema-agnostic: any columns/row shape works, it
-  just infers which columns are numeric for sorting/charting.
+## API
+
+- `GET /api/stats/predictions` — published category index, unchanged.
+- `GET /api/stats/predictions/<category>` — published category JSON, unchanged.
+  Supports `pitcher_strikeouts`, `player_hits`, `player_home_runs`,
+  `player_strikeouts`, `team_win`, `team_total_runs`, and `team_run_diff`.
+- `GET /api/dates` — prediction date folders, newest first.
+- `GET /api/dates/<date>/stats` — available prediction CSV files.
+- `GET /api/data/<date>/<file>` — prediction CSV as rows and column metadata.
+
+Stats endpoints support gzip payloads and return 404 for unpublished objects,
+400 for unknown categories, and 502 for unreadable files or storage failures.
+The old locally joined `/api/scorecard` endpoint has been removed.
+
+## Checks
+
+```bash
+venv/bin/python -m unittest discover -s tests
+node --check static/app.js
+node tests/stats-ui.cjs
+```

@@ -34,7 +34,7 @@
 
 <main class="layout">
   <aside class="stat-rail" id="statRail">
-    <div class="empty-note">Pick a date to see stat sheets.</div>
+    <div class="empty-note">Loading categories…</div>
   </aside>
 
   <section class="board">
@@ -48,17 +48,14 @@
 
     <div id="statusArea" class="status-area"></div>
 
-    <!-- ── Scorecard panel ── -->
     <div class="scorecard" id="scorecard" hidden>
-      <div class="scorecard-header">
-        <span class="scorecard-label" id="scorecardLabel">PREDICTIONS</span>
-        <div class="sc-kpis" id="scKpis"></div>
-      </div>
-      <div class="sc-strip-wrap" id="scStripWrap">
-        <div class="sc-strip" id="scStrip"></div>
-      </div>
+      <div class="scorecard-header"><span class="scorecard-label">Prediction performance</span></div>
+      <div id="statsPeriods" class="stats-periods" aria-label="Stats period"></div>
+      <div id="statsContent" class="table-scroll stats-content"></div>
+      <details class="stats-definitions"><summary>Metric definitions</summary><div id="statsDefinitions"></div></details>
     </div>
 
+    <p id="predictionStatus" class="board-meta" aria-live="polite"></p>
     <div class="table-card" id="tableCard" hidden>
       <div class="table-scroll">
         <table id="dataTable">

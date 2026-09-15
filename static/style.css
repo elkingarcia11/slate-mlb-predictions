@@ -425,3 +425,12 @@ td.num{text-align:left; font-variant-numeric:tabular-nums;}
   }
   .board{padding:1.25rem 1rem 2.5rem;}
 }
+
+/* Published performance summaries */
+.stats-periods{display:flex;flex-wrap:wrap;gap:0.5rem;padding:1rem;}
+.stats-content{padding:0 1rem 1rem;}
+.stats-content table{table-layout:auto;background:var(--paper);}
+.stats-content th,.stats-content td{white-space:nowrap;}
+.stats-content th{cursor:default;}
+.stats-definitions{padding:1rem;font-size:0.8rem;line-height:1.6;}
+.stats-definitions summary{cursor:pointer;}
