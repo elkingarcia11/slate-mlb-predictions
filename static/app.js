@@ -532,9 +532,8 @@ async function loadPublishedStats(file) {
   }
 }
 
-function renderPublishedStats() {
+function renderPeriodMetrics() {
   if (!publishedStats) return;
-  $("scorecard").hidden = false;
   const tabs = $("statsPeriods");
   tabs.replaceChildren();
   Object.entries(PERIODS).forEach(([key, label]) => {
@@ -542,7 +541,7 @@ function renderPublishedStats() {
     button.className = "date-tile" + (selectedPeriod === key ? " active" : "");
     button.textContent = label;
     button.setAttribute("aria-pressed", String(selectedPeriod === key));
-    button.onclick = () => { selectedPeriod = key; renderPublishedStats(); };
+    button.onclick = () => selectPeriod(key);
     tabs.appendChild(button);
   });
   const metrics = publishedStats[selectedPeriod];
@@ -571,6 +570,20 @@ function renderPublishedStats() {
   if (publishedStats.category === "team_win" && metrics?.probability_sample_size != null) {
     $("statsSample").textContent += ` · Brier score based on ${formatMetric("sample_size", metrics.probability_sample_size)} probabilities`;
   }
+}
+
+function selectPeriod(key) {
+  if (key === selectedPeriod) return;
+  selectedPeriod = key;
+  renderPeriodMetrics();
+  // Charts are period-agnostic; only legacy trend tables filter by period.
+  if (!hasPublishedCharts()) renderTrends();
+}
+
+function renderPublishedStats() {
+  if (!publishedStats) return;
+  $("scorecard").hidden = false;
+  renderPeriodMetrics();
   if (hasPublishedCharts()) renderPublishedCharts();
   else {
     destroyCharts();
