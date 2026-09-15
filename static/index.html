@@ -12,66 +12,83 @@
 </head>
 <body>
 
-<header class="topbar">
-  <div class="brand">
-    <span class="brand-mark" aria-hidden="true">
-      <img class="brand-icon" src="/mlb-logo.webp" alt="">
-    </span>
-    <div class="brand-text">
-      <span class="brand-title">SLATE</span>
-      <span class="brand-sub">MLB Predictions</span>
-    </div>
-  </div>
-
-</header>
-
-<nav class="date-strip" id="dateStrip">
-  <div class="date-strip-label">DATE</div>
-  <div class="date-tiles" id="dateTiles">
-    <div class="empty-note">Loading dates…</div>
-  </div>
-</nav>
-
-<main class="layout">
-  <aside class="stat-rail" id="statRail">
-    <div class="empty-note">Loading categories…</div>
-  </aside>
-
-  <section class="board">
-    <div class="board-header">
-      <div>
-        <h1 id="statTitle">Select a stat sheet</h1>
-        <p id="statMeta" class="board-meta">&nbsp;</p>
-      </div>
-      <div class="board-controls" id="boardControls" hidden></div>
-    </div>
-
-    <div id="statusArea" class="status-area"></div>
-
-    <div class="scorecard" id="scorecard" hidden>
-      <div class="scorecard-header"><h2 class="scorecard-label">Category performance</h2></div>
-      <div id="statsPeriods" class="stats-periods" aria-label="Stats period"></div>
-      <div id="statsContent" class="stats-content" aria-live="polite"></div>
-      <p id="statsSample" class="stats-sample"></p>
-      <details id="statsTrends" class="stats-trends">
-        <summary>View trends</summary>
-        <div id="statsBreakdowns"></div>
-        <details class="stats-definitions"><summary>Metric definitions</summary><div id="statsDefinitions"></div></details>
-      </details>
-    </div>
-
-    <p id="predictionStatus" class="board-meta" aria-live="polite"></p>
-    <div class="table-card" id="tableCard" hidden>
-      <div class="table-scroll">
-        <table id="dataTable">
-          <thead><tr></tr></thead>
-          <tbody></tbody>
-        </table>
+<div class="app-shell">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <img class="brand-icon" src="/mlb-logo.webp" alt="">
+      </span>
+      <div class="brand-text">
+        <span class="brand-title">SLATE</span>
+        <span class="brand-sub">MLB Predictions</span>
       </div>
     </div>
-  </section>
-</main>
+    <nav class="date-strip" id="dateStrip" aria-label="Prediction dates">
+      <div class="date-strip-label">DATE</div>
+      <div class="date-tiles" id="dateTiles">
+        <div class="empty-note">Loading dates…</div>
+      </div>
+    </nav>
+  </header>
 
+  <main class="workspace">
+    <aside class="panel panel-categories">
+      <div class="panel-header">
+        <h2 class="panel-title">Categories</h2>
+      </div>
+      <div class="panel-body" id="statRail">
+        <div class="empty-note">Loading categories…</div>
+      </div>
+    </aside>
+
+    <section class="panel panel-analysis">
+      <div class="panel-header panel-header-split">
+        <div>
+          <h1 id="statTitle" class="panel-heading">Select a stat sheet</h1>
+          <p id="statMeta" class="board-meta">&nbsp;</p>
+        </div>
+        <div class="board-controls" id="boardControls" hidden></div>
+      </div>
+      <div class="panel-body" id="analysisBody">
+        <div id="statusArea" class="status-area"></div>
+        <div class="scorecard" id="scorecard" hidden>
+          <div class="scorecard-header"><h2 class="scorecard-label">Category performance</h2></div>
+          <div id="statsPeriods" class="stats-periods" aria-label="Stats period"></div>
+          <div id="statsContent" class="stats-content" aria-live="polite"></div>
+          <p id="statsSample" class="stats-sample"></p>
+          <div id="statsCharts" class="stats-charts" aria-live="polite"></div>
+          <details id="statsTrends" class="stats-trends" open>
+            <summary id="statsTrendsSummary">More charts</summary>
+            <div id="statsBreakdowns" class="stats-breakdowns"></div>
+            <details class="stats-definitions"><summary>Metric definitions</summary><div id="statsDefinitions"></div></details>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel panel-predictions">
+      <div class="panel-header panel-header-split">
+        <div>
+          <h2 class="panel-title">Predictions</h2>
+          <p id="predictionStatus" class="board-meta" aria-live="polite"></p>
+        </div>
+      </div>
+      <div class="panel-body panel-body-table">
+        <div class="table-card" id="tableCard" hidden>
+          <div class="table-scroll">
+            <table id="dataTable">
+              <thead><tr></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <p id="predictionsEmpty" class="empty-note" hidden>Select a date and category to load predictions.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
