@@ -434,3 +434,20 @@ td.num{text-align:left; font-variant-numeric:tabular-nums;}
 .stats-content th{cursor:default;}
 .stats-definitions{padding:1rem;font-size:0.8rem;line-height:1.6;}
 .stats-definitions summary{cursor:pointer;}
+
+/* Compact category performance, with detail disclosed on demand. */
+.scorecard-label{margin:0;}
+.performance-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;margin:0;}
+.performance-metrics dt{font-size:0.75rem;color:var(--ink-text);margin-bottom:0.45rem;}
+.performance-metrics dd{margin:0;font-family:'IBM Plex Mono',monospace;font-size:clamp(1rem,2vw,1.5rem);color:var(--chalk);font-variant-numeric:tabular-nums;}
+.stats-sample{margin:0;padding:0 1rem 1rem;font-size:0.75rem;color:var(--ink-text);line-height:1.6;}
+.stats-trends{border-top:1px solid var(--panel-line);}
+.stats-trends>summary{padding:0.75rem 1rem;cursor:pointer;font-size:0.8rem;}
+.stats-trends h3{font-size:0.85rem;font-weight:500;margin:1rem;}
+.stats-trends .table-scroll{max-height:20rem;}
+.stats-periods button:focus-visible,.stats-trends summary:focus-visible{outline:2px solid var(--chalk);outline-offset:3px;}
+@media(max-width:440px){
+  .performance-metrics{gap:0.65rem;}
+  .performance-metrics dt{font-size:0.65rem;}
+  .performance-metrics dd{font-size:1rem;}
+}

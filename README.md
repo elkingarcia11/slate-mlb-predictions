@@ -33,7 +33,12 @@ an unavailable message; there is no local calculation fallback. Summaries load
 independently of prediction CSV availability and use the published `as_of` and
 `evaluated_through` dates, regardless of the selected prediction-table date.
 Rates are displayed as percentages; null metrics display as an em dash.
-Published metric definitions are available below the summary table.
+Each category shows a compact **Category performance** section above predictions.
+The default period is **30 days**; the selection is retained across categories.
+Count categories show exact accuracy, within ±1, and average absolute error in
+category units. Team win shows winner accuracy, Brier score, and sample size.
+**View trends** expands daily results for the selected period and the published
+all-time weekday and home/away breakdowns, plus metric definitions.
 
 ## API
 

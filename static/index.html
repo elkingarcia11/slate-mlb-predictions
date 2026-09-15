@@ -49,10 +49,15 @@
     <div id="statusArea" class="status-area"></div>
 
     <div class="scorecard" id="scorecard" hidden>
-      <div class="scorecard-header"><span class="scorecard-label">Prediction performance</span></div>
+      <div class="scorecard-header"><h2 class="scorecard-label">Category performance</h2></div>
       <div id="statsPeriods" class="stats-periods" aria-label="Stats period"></div>
-      <div id="statsContent" class="table-scroll stats-content"></div>
-      <details class="stats-definitions"><summary>Metric definitions</summary><div id="statsDefinitions"></div></details>
+      <div id="statsContent" class="stats-content" aria-live="polite"></div>
+      <p id="statsSample" class="stats-sample"></p>
+      <details id="statsTrends" class="stats-trends">
+        <summary>View trends</summary>
+        <div id="statsBreakdowns"></div>
+        <details class="stats-definitions"><summary>Metric definitions</summary><div id="statsDefinitions"></div></details>
+      </details>
     </div>
 
     <p id="predictionStatus" class="board-meta" aria-live="polite"></p>

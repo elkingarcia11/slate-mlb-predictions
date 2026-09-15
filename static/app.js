@@ -114,7 +114,8 @@ async function loadPredictionTable(file) {
     state.tableSortCol = data.columns.find((c) => c === "prediction_proba") ||
       data.columns.find((c) => /prediction/i.test(c)) || data.columns[0];
     state.tableSortDir = "desc";
-    $("predictionStatus").textContent = `Predictions · ${date}`;
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    $("predictionStatus").textContent = date === today ? "Today’s predictions" : `Predictions · ${date}`;
     renderTable();
   } catch (err) {
     if (request === tableRequest) $("predictionStatus").textContent = `Predictions unavailable for ${date}: ${err.message}`;
@@ -216,13 +217,12 @@ function renderTableBody() {
 
 // Published summary metrics: formatting only, no local evaluation.
 const PERIODS = {
-  yesterday: "Yesterday", all_time: "All time", last_7_days: "Last 7 days",
-  last_30_days: "Last 30 days", by_weekday: "By weekday",
-  by_home_away: "Home / away", daily: "Daily",
+  yesterday: "Yesterday", last_7_days: "7 days",
+  last_30_days: "30 days", all_time: "All time",
 };
 let statsRequest = 0;
 let publishedStats = null;
-let selectedPeriod = "yesterday";
+let selectedPeriod = "last_30_days";
 
 function friendlyLabel(value) {
   return value.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -243,7 +243,7 @@ async function loadPublishedStats(file) {
     const data = await fetchJson(`/api/stats/predictions/${encodeURIComponent(file)}`);
     if (request !== statsRequest) return;
     publishedStats = data;
-    $("statMeta").textContent = `As of ${data.as_of || "—"} · Evaluated through ${data.evaluated_through || "—"}`;
+    $("statMeta").textContent = "";
     setStatus("");
     renderPublishedStats();
   } catch (err) {
@@ -264,38 +264,116 @@ function renderPublishedStats() {
     button.onclick = () => { selectedPeriod = key; renderPublishedStats(); };
     tabs.appendChild(button);
   });
-  const value = publishedStats[selectedPeriod];
-  let rows;
-  if (selectedPeriod === "daily") rows = [...(value || [])].sort((a, b) => String(b.date).localeCompare(String(a.date)));
-  else if (["by_weekday", "by_home_away"].includes(selectedPeriod)) {
-    rows = Object.entries(value || {}).map(([group, metrics]) => ({ group: friendlyLabel(group), ...metrics }));
-  } else rows = value ? [value] : [];
+  const metrics = publishedStats[selectedPeriod];
   const content = $("statsContent");
   content.replaceChildren();
-  if (!rows.length) content.textContent = "No settled results for this period yet.";
-  else {
-    const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
-    const table = document.createElement("table");
-    const head = table.createTHead().insertRow();
-    columns.forEach((key) => {
-      const th = document.createElement("th");
-      th.textContent = friendlyLabel(key);
-      th.title = publishedStats.definitions?.[key] || "";
-      head.appendChild(th);
+  if (!metrics || !metrics.sample_size) {
+    content.textContent = "No settled results for this period yet.";
+  } else {
+    const grid = document.createElement("dl");
+    grid.className = "performance-metrics";
+    summaryMetrics().forEach(([key, label]) => {
+      const metric = document.createElement("div");
+      const title = document.createElement("dt");
+      title.textContent = label;
+      title.title = publishedStats.definitions?.[key] || METRIC_DEFINITIONS[key] || "";
+      const value = document.createElement("dd");
+      value.textContent = summaryValue(key, metrics[key]);
+      metric.appendChild(title);
+      metric.appendChild(value);
+      grid.appendChild(metric);
     });
-    const body = table.createTBody();
-    rows.forEach((row) => {
-      const tr = body.insertRow();
-      columns.forEach((key) => { tr.insertCell().textContent = formatMetric(key, row[key]); });
-    });
-    content.appendChild(table);
+    content.appendChild(grid);
   }
+  const through = metrics?.date || publishedStats.evaluated_through;
+  $("statsSample").textContent = `${metrics ? `Based on ${formatMetric("sample_size", metrics.sample_size)} predictions` : "Sample size unavailable"} · Through ${formatReportDate(through)}`;
+  if (publishedStats.category === "team_win" && metrics?.probability_sample_size != null) {
+    $("statsSample").textContent += ` · Brier score based on ${formatMetric("sample_size", metrics.probability_sample_size)} probabilities`;
+  }
+  renderTrends();
   const definitions = $("statsDefinitions");
   definitions.replaceChildren();
   Object.entries(publishedStats.definitions || {}).forEach(([key, value]) => {
     const p = document.createElement("p");
     p.textContent = `${friendlyLabel(key)}: ${value}`;
     definitions.appendChild(p);
+  });
+}
+
+const METRIC_DEFINITIONS = {
+  mean_absolute_error: "Average absolute prediction error; lower is better.",
+  brier_score: "Mean squared error of predicted win probabilities; lower is better.",
+  sample_size: "Number of evaluated predictions.",
+};
+
+function summaryMetrics() {
+  return publishedStats.category === "team_win"
+    ? [["hit_rate", "Winner accuracy"], ["brier_score", "Brier score"], ["sample_size", "Sample size"]]
+    : [["hit_rate", "Exact accuracy"], ["within_1_rate", "Within ±1"], ["mean_absolute_error", "Avg. absolute error"]];
+}
+
+function summaryValue(key, value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  if (key === "mean_absolute_error") {
+    const units = { pitcher_strikeouts: "strikeouts", player_strikeouts: "strikeouts", player_hits: "hits", player_home_runs: "home runs", team_total_runs: "runs", team_run_diff: "runs" };
+    return `${value.toFixed(1)} ${units[publishedStats.category] || ""}`.trim();
+  }
+  if (key === "brier_score") return value.toFixed(3);
+  return formatMetric(key, value);
+}
+
+function formatReportDate(value) {
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+function periodDailyRows() {
+  const rows = [...(publishedStats.daily || [])];
+  if (selectedPeriod === "all_time") return rows.sort((a, b) => b.date.localeCompare(a.date));
+  const end = new Date(`${publishedStats.as_of}T00:00:00Z`);
+  const days = { yesterday: 1, last_7_days: 7, last_30_days: 30 }[selectedPeriod];
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - days);
+  return rows.filter((row) => {
+    const date = new Date(`${row.date}T00:00:00Z`);
+    return date >= start && date < end;
+  }).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function renderTrends() {
+  const container = $("statsBreakdowns");
+  container.replaceChildren();
+  const groups = [
+    [`Daily results · ${PERIODS[selectedPeriod]}`, periodDailyRows(), "date"],
+    ["By weekday · All time", Object.entries(publishedStats.by_weekday || {}).map(([group, metrics]) => ({ ...metrics, group: friendlyLabel(group) })), "group"],
+    ["Home / away · All time", Object.entries(publishedStats.by_home_away || {}).map(([group, metrics]) => ({ ...metrics, group: friendlyLabel(group) })), "group"],
+  ];
+  groups.forEach(([label, rows, groupKey]) => {
+    const heading = document.createElement("h3");
+    heading.textContent = label;
+    container.appendChild(heading);
+    const wrap = document.createElement("div");
+    wrap.className = "table-scroll stats-content";
+    container.appendChild(wrap);
+    if (!rows.length) { wrap.textContent = "No settled results available."; return; }
+    const columns = [[groupKey, groupKey === "date" ? "Date" : "Group"], ...summaryMetrics()];
+    if (publishedStats.category !== "team_win") columns.push(["sample_size", "Sample size"]);
+    const table = document.createElement("table");
+    const head = table.createTHead().insertRow();
+    columns.forEach(([, label]) => {
+      const th = document.createElement("th");
+      th.textContent = label;
+      th.setAttribute("scope", "col");
+      head.appendChild(th);
+    });
+    const body = table.createTBody();
+    rows.forEach((row) => {
+      const tr = body.insertRow();
+      columns.forEach(([key]) => {
+        tr.insertCell().textContent = key === groupKey ? row[key] : summaryValue(key, row[key]);
+      });
+    });
+    wrap.appendChild(table);
   });
 }
 
