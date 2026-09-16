@@ -714,6 +714,47 @@ function renderTrends() {
 }
 
 // ---------------------------------------------------------------
+// Panel collapse
+// ---------------------------------------------------------------
+const PANEL_COLLAPSE = {
+  categories: { panelId: "panelCategories", toggleId: "toggleCategories", workspaceClass: "is-cats-collapsed", label: "categories" },
+  analysis: { panelId: "panelAnalysis", toggleId: "toggleAnalysis", workspaceClass: "is-analysis-collapsed", label: "charts" },
+};
+
+function setPanelCollapsed(key, collapsed) {
+  const cfg = PANEL_COLLAPSE[key];
+  if (!cfg) return;
+  const workspace = $("workspace");
+  const panel = $(cfg.panelId);
+  const toggle = $(cfg.toggleId);
+  if (!workspace || !panel || !toggle) return;
+  panel.classList.toggle("is-collapsed", collapsed);
+  workspace.classList.toggle(cfg.workspaceClass, collapsed);
+  toggle.setAttribute("aria-expanded", String(!collapsed));
+  const action = collapsed ? "Expand" : "Collapse";
+  toggle.title = `${action} ${cfg.label}`;
+  toggle.setAttribute("aria-label", `${action} ${cfg.label}`);
+  if (key === "analysis" && !collapsed) {
+    requestAnimationFrame(() => {
+      chartInstances.forEach((chart) => chart.resize());
+    });
+  }
+}
+
+function togglePanel(key) {
+  const panel = $(PANEL_COLLAPSE[key]?.panelId);
+  if (!panel) return;
+  setPanelCollapsed(key, !panel.classList.contains("is-collapsed"));
+}
+
+function initPanelToggles() {
+  Object.keys(PANEL_COLLAPSE).forEach((key) => {
+    const toggle = $(PANEL_COLLAPSE[key].toggleId);
+    if (toggle) toggle.addEventListener("click", () => togglePanel(key));
+  });
+}
+
+// ---------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------
 function setStatus(msg, isError = false) {
@@ -735,5 +776,6 @@ function escapeHtml(s) {
 // Boot
 // ---------------------------------------------------------------
 (async function init() {
+  initPanelToggles();
   await Promise.all([loadDates(), loadCategories()]);
 })();

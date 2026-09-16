@@ -31,23 +31,26 @@
     </nav>
   </header>
 
-  <main class="workspace">
-    <aside class="panel panel-categories">
-      <div class="panel-header">
+  <main class="workspace" id="workspace">
+    <aside class="panel panel-categories" id="panelCategories" data-panel="categories">
+      <div class="panel-header panel-header-toggle">
         <h2 class="panel-title">Categories</h2>
+        <button type="button" class="panel-toggle" id="toggleCategories" aria-expanded="true" aria-controls="statRail" aria-label="Collapse categories" title="Collapse categories"></button>
       </div>
       <div class="panel-body" id="statRail">
         <div class="empty-note">Loading categories…</div>
       </div>
     </aside>
 
-    <section class="panel panel-analysis">
-      <div class="panel-header panel-header-split">
-        <div>
+    <section class="panel panel-analysis" id="panelAnalysis" data-panel="analysis">
+      <div class="panel-header panel-header-split panel-header-toggle">
+        <h2 class="panel-title panel-rail-label">Charts</h2>
+        <div class="panel-header-main">
           <h1 id="statTitle" class="panel-heading">Select a stat sheet</h1>
           <p id="statMeta" class="board-meta">&nbsp;</p>
         </div>
         <div class="board-controls" id="boardControls" hidden></div>
+        <button type="button" class="panel-toggle" id="toggleAnalysis" aria-expanded="true" aria-controls="analysisBody" aria-label="Collapse charts" title="Collapse charts"></button>
       </div>
       <div class="panel-body" id="analysisBody">
         <div id="statusArea" class="status-area"></div>
